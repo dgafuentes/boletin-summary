@@ -1,0 +1,6 @@
+.venv/
+*.txt
+boletin_summary.egg-info/*
+build/*
+*.db
+*.xlsx
