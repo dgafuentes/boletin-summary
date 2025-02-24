@@ -7,7 +7,7 @@ You need to create a virtual environment and install the dependencies:
 
 ```bash
 python -m venv .venv
-\.venv\Scripts\activate #  In linux: source .venv/bin/activate
+.\.venv\Scripts\activate #  In linux: source .venv/bin/activate
 pip install .
 ```
 
