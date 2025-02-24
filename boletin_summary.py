@@ -1,5 +1,5 @@
+import time
 import pandas as pd
-import csv
 import sqlite3
 import urllib3
 import smtplib
@@ -11,10 +11,8 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-
 DATABASE = "boletin_summary.db"
-CSV_FILE = "boletin_summary.csv"
+FILENAME = "boletin_summary.xlsx"
 FEEDS = {
     "domain": "https://tip.develsecurity.com/feeds/2cdf4671-c9b0-476a-ac99-b7fedb7191c4",
     "md5": "https://tip.develsecurity.com/feeds/e9dded32-1fa0-4e93-b6be-aba781160cca",
@@ -87,36 +85,56 @@ def setup_database():
     except sqlite3.Error as e:
         print(f"Database error: {e}")
 
-def delete_item():
+def delete_items():
     conn = database()
-    statement = "delete from sha256 where value='80f142a157ee0e9c36d61cf6ce91026fe8608695c317b1ddd1103ef04fa51b57'"
+    indicators = {
+        "domain": ["arc4.new", "aazsbsgya565vlu2c6bzy6yfiebkcbtvvcytvolt33s77xypi7nypxyd.onion", "n2.skype"],
+        "md5": ["6ed4f5f04d62b18d96b26d6db7c18840", "7688c1b7a1124c1cd9413f4b535b2f44"],
+        "sha1": ["c7a37c0edeffd23777cca44f9b49076be1bd43e6", "f048e5651a28ff302d257d0c92063f3f90d08988"],
+        "sha256": ["17205c43189c22dfcb278f5cc45c2562f622b0b6280dcd43cc1d3c274095eb90"],
+        "ip": ["87.249.138.47", "45.55.158.47", "5.8.63.178"],
+        "url": ["https://ssnagov-report.vipcase.bg/?s=2734430", "https://smbeckwithlaw.com/1.zip", "https://ongish.net/1stnb/", "https://heilee.com/qxz3l"]
+    }
+
     cursor = conn.cursor()
-    cursor.execute(statement)
-    conn.commit()
+    for feed_type, values in indicators.items():
+        [print(f"-> Indicator={indicator}") for indicator in values]
+        for indicator in values:
+            statement = f"delete from {feed_type} where value='{indicator}'"
+            cursor.execute(statement)
+            conn.commit()
     conn.close()
 
-def get_feed_data(feed_url):
-    try:
-        response = requests.get(feed_url, verify=False)
-        response.raise_for_status()
-        response = response.text.strip().splitlines()
-        clean_response = [line for line in response if line]
-        return clean_response
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching feed data: {e}")
-        return None
+def get_feed_data(feed_url, max_retries=10, delay=5):
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            response = requests.get(feed_url, verify=False, timeout=10)
+            response.raise_for_status()
+            response = response.text.strip().splitlines()
+            clean_response = [line for line in response if line]
+            return clean_response
+        except requests.exceptions.RequestException as error:
+            print(f"Error fetching feed data: {error} - Attempt {attempt + 1}/{max_retries} trying to connect to {feed_url}")
+            attempt += 1
+            time.sleep(delay)
 
 def check_value_in_db(feed_type, values):
+    new_indicators = []
     conn = database()
     cursor = conn.cursor()
 
     for value in values:
-        cursor.execute(f"SELECT value FROM {feed_type} WHERE value = ?", (value,))
-        if cursor.fetchone():
-            return False
+        statement = f"SELECT value FROM {feed_type} WHERE value = ?"
+        cursor.execute(statement, (value,))
+        data = cursor.fetchone()
+
+        if not data:
+            new_indicators.append(value)
+
     conn.close()
 
-    return values
+    return new_indicators
 
 def add_data_to_db(feed_type, new_elements):
     if not new_elements:
@@ -129,18 +147,17 @@ def add_data_to_db(feed_type, new_elements):
     conn.commit()
     conn.close()
 
-def csv_exporter(new_data):
+def file_exporter(new_data):
     if not new_data:
         print("No hay elementos nuevos para exportar.")
         return None
 
-    filename = "boletin_summary.xlsx"
-    with pd.ExcelWriter(filename) as writer:
+    with pd.ExcelWriter(FILENAME) as writer:
         for feed_type in new_data.keys():
-            df = pd.DataFrame(new_data[feed_type], columns=["value"])
+            df = pd.DataFrame(new_data[feed_type], columns=["Indicator"])
             df.to_excel(writer, sheet_name=feed_type, index=False)
 
-    return filename
+    return FILENAME
 
 def main():
     all_new_data = {}
@@ -155,14 +172,15 @@ def main():
                 all_new_data[feed_type] = new_elements
                 add_data_to_db(feed_type, new_elements)
 
-    csv_file = csv_exporter(all_new_data)
+    boletin_file = file_exporter(all_new_data)
 
-    if csv_file:
-        send_email(subject="----- Boletin summary -----", body="Actualización de contenido boletín", attachment=csv_file)
+    if boletin_file:
+        send_email(subject="----- Boletin summary -----", body="Actualización de contenido boletín", attachment=boletin_file)
     else:
-        print("No se detectaron nuevos elementos. No se enviará correo.")
+        print("No se envía correo.")
 
 if __name__ == "__main__":
-    # setup_database()
-    # delete_item()
+    requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    setup_database()
     main()

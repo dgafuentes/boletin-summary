@@ -20,4 +20,4 @@ python boletin_summary.py
 ```
 
 > [!TIP]
-> You can comment __setup_database__ function in *__main__* execution block to can process all feeds more faster, that function is responsible to setup tables in case that do not exist.
+> You can comment __setup_database__ function in *__main__* execution block to can process all feeds more faster, that function is responsible to setup tables in case those do not exist. Also you can add to *__main__* execution block __delete_items__ function to can delete some indicators in all tables (that function was made with test purposes)
