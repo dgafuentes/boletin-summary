@@ -4,3 +4,4 @@ boletin_summary.egg-info/*
 build/*
 *.db
 *.xlsx
+*.log

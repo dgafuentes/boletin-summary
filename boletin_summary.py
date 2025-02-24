@@ -4,6 +4,7 @@ import sqlite3
 import urllib3
 import smtplib
 import requests
+import logging
 from datetime import datetime
 from email import encoders
 from email.mime.text import MIMEText
@@ -12,7 +13,11 @@ from email.mime.multipart import MIMEMultipart
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 DATABASE = "boletin_summary.db"
-FILENAME = "boletin_summary.xlsx"
+FILENAME = "boletin-summary.xlsx"
+
+logging.basicConfig(filename="boletin-summary.log", level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(funcName)s: %(message)s", datefmt="%d-%m-%y %H:%M")
+
 FEEDS = {
     "domain": "https://tip.develsecurity.com/feeds/2cdf4671-c9b0-476a-ac99-b7fedb7191c4",
     "md5": "https://tip.develsecurity.com/feeds/e9dded32-1fa0-4e93-b6be-aba781160cca",
@@ -60,16 +65,16 @@ def send_email(subject, body, attachment=None):
         server.login(EMAIL_CONFIG["username"], EMAIL_CONFIG["password"])
         server.sendmail(EMAIL_CONFIG["email_from"], EMAIL_CONFIG["destination"], msg.as_string())
         server.quit()
-        print("Email sent successfully")
+        logging.info("Email sent successfully")
     except smtplib.SMTPException as e:
-        print(f"Error sending email: {e}")
+        logging.error(f"Error sending email: {e}")
 
 def database():
     try:
         connection = sqlite3.connect(DATABASE)
         return connection
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
+        logging.error(f"Database error: {e}")
         return None
 
 def setup_database():
@@ -83,7 +88,7 @@ def setup_database():
         conn.commit()
         conn.close()
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
+        logging.error(f"Database error: {e}")
 
 def delete_items():
     conn = database()
@@ -115,7 +120,7 @@ def get_feed_data(feed_url, max_retries=10, delay=5):
             clean_response = [line for line in response if line]
             return clean_response
         except requests.exceptions.RequestException as error:
-            print(f"Error fetching feed data: {error} - Attempt {attempt + 1}/{max_retries} trying to connect to {feed_url}")
+            logging.error(f"Error fetching feed data: {error} - Attempt {attempt + 1}/{max_retries} trying to connect to {feed_url}")
             attempt += 1
             time.sleep(delay)
 
@@ -130,6 +135,7 @@ def check_value_in_db(feed_type, values):
         data = cursor.fetchone()
 
         if not data:
+            logging.info(f"New indicator found: {value}")
             new_indicators.append(value)
 
     conn.close()
@@ -138,7 +144,8 @@ def check_value_in_db(feed_type, values):
 
 def add_data_to_db(feed_type, new_elements):
     if not new_elements:
-        return {"status": "error", "message": "No new elements to add to the database."}
+        logging.info("No new elements to add to the database.")
+        return None
 
     date = datetime.now().strftime("%Y-%m-%d")
     conn = database()
@@ -149,7 +156,7 @@ def add_data_to_db(feed_type, new_elements):
 
 def file_exporter(new_data):
     if not new_data:
-        print("No hay elementos nuevos para exportar.")
+        logging.info("No hay elementos nuevos para exportar.")
         return None
 
     with pd.ExcelWriter(FILENAME) as writer:
@@ -177,7 +184,7 @@ def main():
     if boletin_file:
         send_email(subject="----- Boletin summary -----", body="Actualización de contenido boletín", attachment=boletin_file)
     else:
-        print("No se envía correo.")
+        logging.info("No se envía correo.")
 
 if __name__ == "__main__":
     requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
